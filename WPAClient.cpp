@@ -1,5 +1,7 @@
 #include "WPAClient.h"
 
+int scanInterval = 30;
+
 namespace WPEFramework {
 namespace WPASupplicant {
 
@@ -12,8 +14,12 @@ double now()
 }
 
 WPAClient::WPAClient()
-    : _CtrlSocket()
-    , _socket()
+#if USE_SINGLE_SOCK
+    //: _socket(_CtrlSocket)        // Single sock for both ctrl & messages'
+#else
+    : _socket()
+    , _CtrlSocket()
+#endif
 {
     printf("%s: Entering\n", __FUNCTION__);
     Run();
@@ -47,14 +53,15 @@ uint32_t WPAClient::Worker()
             continue;
         }
 
-        if (elapsedTime == 0)
+        if ((elapsedTime == 0) && scanInterval)
             _socket.Send("SCAN");
 
-        elapsedTime = (elapsedTime > 15000) ? 0 : elapsedTime+waitTimeMS;
+        elapsedTime = (elapsedTime > scanInterval*1000) ? 0 : elapsedTime+waitTimeMS;
         usleep(waitTimeMS * 1000);
     }
     return 0;
 }
+
 void WPAClient::Dispose()
 {
     printf("WPAClient thread::%s: Done!!!\n", __FUNCTION__);
@@ -101,7 +108,7 @@ uint16_t WPAClient::Socket::SendData(uint8_t* dataFrame, const uint16_t maxSendS
 {
     uint16_t result = 0;
 
-    printf("%lf: %s\n", now(), __FUNCTION__);
+    //printf("%lf: %s\n", now(), __FUNCTION__);
     if (!_requests.empty()) {
         string cmd = _requests.front();
         _requests.pop();
@@ -115,10 +122,11 @@ uint16_t WPAClient::Socket::SendData(uint8_t* dataFrame, const uint16_t maxSendS
 
 uint16_t WPAClient::Socket::ReceiveData(uint8_t* dataFrame, const uint16_t receivedSize)
 {
-    printf("%lf: %s: receivedSize=%d\n", now(),  __FUNCTION__, receivedSize);
     if (receivedSize) {
         string response = string(reinterpret_cast<const char*>(dataFrame), (dataFrame[receivedSize - 1] == '\n' ? receivedSize - 1 : receivedSize));
         _responses.push(response);
+        //usleep(500000);                 // slow it down
+        sleep(1);
     }
     return receivedSize;
 }
@@ -134,6 +142,9 @@ void WPAClient::Socket::StateChange()
 
 int main(int argc, char *argv[])
 {
+    if (argc > 1)
+        scanInterval = atoi (argv[1]);
+
     WPEFramework::WPASupplicant::WPAClient wpaClient;
 
     while ( true ) {

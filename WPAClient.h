@@ -7,13 +7,41 @@
 namespace WPEFramework {
 namespace WPASupplicant {
 
+    struct Network {
+        string ssid;
+        string bssid;
+        int freq;
+        int level;
+        int snr;
+    };
+
+    class Networks : public std::map<string,Network>
+    {
+        public:
+        void Add(Network& network)
+        {
+            insert( std::pair<string,Network>(network.bssid, network) );
+        }
+        void Remove(const string& bssid)
+        {
+            Networks::iterator it = find(bssid);
+            if (it != end())
+                erase (it);
+        }
+        void dump()
+        {
+            Networks::iterator it = begin();
+        }
+    };
+
     class WPAClient : public Core::Thread
     {
         private:
             static constexpr uint32_t MaxConnectionTime = 3000;
+            typedef Core::StreamType<Core::SocketDatagram> BaseClass;
 
         public:
-            class Socket : public Core::StreamType<Core::SocketDatagram>
+            class Socket : public BaseClass
             {
             public:
                 Socket();
@@ -26,7 +54,6 @@ namespace WPASupplicant {
                 void StateChange();
 
             private:
-                typedef Core::StreamType<Core::SocketDatagram> BaseClass;
                 string supplicantBase;
                 string interfaceName;
                 uint32_t _error;
@@ -43,7 +70,12 @@ namespace WPASupplicant {
             void Dispose();
 
             Socket _CtrlSocket;
+#if USE_SINGLE_SOCK
+            Socket &_socket;
+#else
             Socket _socket;
+#endif
+            Networks _networks;
     };
 }
 } // namespace WPEFramework::WPASupplicant
