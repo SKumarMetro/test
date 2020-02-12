@@ -18,6 +18,7 @@
 #include <sstream>
 #include <thread>
 #include <iostream>
+#include <sys/ioctl.h>
 
 using namespace std;
 #define DEFAULT_SOCK_PATH "/var/run/wpa_supplicant/wlan0";
@@ -29,6 +30,8 @@ using namespace std;
 #define WPA_EVENT_SCAN_FAILED   "CTRL-EVENT-SCAN-FAILED"
 
 
+#define RECV_BUFFER_SIZE 4096
+#define SEND_BUFFER_SIZE 256
 #define PRINTF_L1 printf
 #define PRINTF_L2 //printf
 
@@ -218,7 +221,35 @@ int SureshCli::Socket::Open()
         perror("socket error");
         exit(-1);
     }
-    printf(  "%s: Created socket %d\n", __FUNCTION__, fd);
+
+    int rb = 0, sb = 0;
+    socklen_t sz = sizeof(int);
+
+    rb = RECV_BUFFER_SIZE;
+    rc = setsockopt(fd, SOL_SOCKET, SO_RCVBUF, (void *)&rb, sz);
+    if (rc)
+        printf("%s: Failed to SO_RCVBUF=%d errno=%d\n", __FUNCTION__, fd, rb, errno);
+    sb = SEND_BUFFER_SIZE;
+    rc = setsockopt(fd, SOL_SOCKET, SO_SNDBUF, (void *)&sb, sz);
+    if (rc)
+        printf("%s: Failed to SO_SNDBUF=%d errno=%d\n", __FUNCTION__, fd, sb, errno);
+
+    getsockopt(fd, SOL_SOCKET, SO_RCVBUF, (void *)&rb, &sz);
+    getsockopt(fd, SOL_SOCKET, SO_SNDBUF, (void *)&sb, &sz);
+
+
+    /*
+    root@spectrum110h:~# cat /proc/sys/net/ipv4/udp_rmem_min
+    4096
+    root@spectrum110h:~# cat /proc/sys/net/ipv4/udp_wmem_min
+    4096
+    root@spectrum110h:~# cat /proc/sys/net/ipv4/udp_mem
+    11961   15949   23922
+
+    Open: Created socket 4 SO_RCVBUF=163840 SO_SNDBUF=163840
+    Open: Created socket 5 SO_RCVBUF=163840 SO_SNDBUF=163840
+     */
+    printf(  "%s: Created socket %d SO_RCVBUF=%d SO_SNDBUF=%d\n", __FUNCTION__, fd, rb, sb);
 
     memset(&remote, 0, sizeof(remote));
     remote.sun_family = AF_UNIX;
@@ -313,6 +344,17 @@ int SureshCli::Socket::Receive(char *reply, int reply_len)
             rc = recv(fd, reply, reply_len, 0);
             //printf("recv return %d\n", rc);
 
+
+            int rcvbuf = 0;
+            socklen_t optlen = sizeof(rcvbuf);
+            if (getsockopt(fd, SOL_SOCKET, SO_RCVBUF, &rcvbuf, &optlen) < 0)
+                rcvbuf = -1;
+
+            int inq2 = 0;
+            if (ioctl(fd, TIOCINQ, &inq2) < 0)
+                inq2 = -1;
+            printf("%s: socket=%d inq1=%d inq2=%d rcvbuf=%d\n", __FUNCTION__, fd, 0, inq2, rcvbuf);
+
             if (rc > 0) {
             } else if (rc == 0) {   // DGRAM can be 0 byes NOT an error
                 printf ("%s: errno=%d\n", __FUNCTION__, errno );
@@ -377,7 +419,7 @@ void SureshCli::processDetailResponse(const string &response, Network& network)
 
 void SureshCli::ControlThread()
 {
-    char data[4096];
+    char data[RECV_BUFFER_SIZE];
 
     printf ("Entering %s\n", __FUNCTION__);
     while ( true ) {
@@ -388,13 +430,18 @@ void SureshCli::ControlThread()
             Push(msg);
 
             //sleep(1);     // slow it down
+            /*
+            1581023279.324731: CTRL-DEBUG: ctrl_sock-sendmsg: sock=12 sndbuf=163840 outq=81536 send_len=42
+            1581023279.324756: CTRL_IFACE monitor sent successfully to /tmp/wpa_ctrl-4550-0\x00
+            1581023279.324767: CTRL: Had to throttle pending event message transmission for (sock 12 gsock -1)
+            */
         }
     }
 }
 
 void SureshCli::DataThread()
 {
-    char data[4096];
+    char data[RECV_BUFFER_SIZE];
     int waitTimeMS = 100;
     int elapsedTime = scanInterval*1000;
     int added = 0, removed = 0;
@@ -447,7 +494,7 @@ void SureshCli::DataThread()
                 _networks.Remove(bss);
             }
         } else {
-            if (elapsedTime >= scanInterval*1000) {
+            if (scanInterval && (elapsedTime >= scanInterval*1000)) {
                 Send("SCAN");
                 elapsedTime = 0;
             }
@@ -463,9 +510,9 @@ void SureshCli::DataThread()
 int main(int argc, char *argv[])
 {
     if (argc > 1)
-        socket_path = argv[1];
+        scanInterval = atoi (argv[1]);
     if (argc > 2)
-        scanInterval = atoi (argv[2]);
+        socket_path = argv[2];
 
     printf("socket_path=%s scanInterval=%d\n", socket_path, scanInterval);
 
