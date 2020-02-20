@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+</head>
+
+<script src="./thunderJS.js"></script>
+<script>
+    const ssid = 'metro';
+    const type = 'WPA';
+    const psk = 'aaa00000';
+
+    const config = {
+        host: 'rpi',
+        port: '80'
+    };
+
+    const repeatTimeout = 15000;
+    let successCount = 0;
+    let failedCount = 0;
+    var statusTimer = null;
+    var autoLoop = false;
+    var defaultWifi = [ "metro", "dlink-metro" ];
+
+    var t;
+
+    function init()
+    {
+        statusMessage('Intializing ...');
+        t = new ThunderJS(config);
+
+        t.on('WifiControl', 'scanresults', (data) => {
+            statusMessage('Got scanresults ' + data.length)
+            /*
+            for (let i=0; i<data.length; i++) {
+                if (data.ssid === ssid) {
+                    statusMessage('Found ssid')
+                    //saveConfig();
+                }
+            }
+            */
+        });
+
+        t.on('WifiControl', 'networkchange', (data) => {
+            statusMessage('Got networkchange ', data)
+        });
+
+        t.on('WifiControl', 'connectionchange', (ssid) => {
+            statusMessage('Got connectionchange ssid=' + ssid);
+            //clearTimeout(statusTimer);
+            if (ssid) {
+                ++successCount;
+                //setTimeout(disconnect.bind(this), repeatTimeout);
+            } else {
+                //setTimeout(networks.bind(this), repeatTimeout);
+            }
+        });
+        Heartbeat();
+        networks();
+    }
+
+    if (autoLoop) {
+        disconnect();
+        setTimeout(status.bind(this), 3000);
+    }
+    //Heartbeat();
+
+    function Heartbeat() {
+        //statusMessage('Heartbeat ...');
+        t.call('WifiControl', 'status').then(status => {
+            statusMessage("Heartbeat scanning=" + status.scanning + " connected='" + status.connected + "'");
+        })
+        heartbeatTimer = setTimeout(Heartbeat, 30000);
+    }
+
+
+    function scan() {
+        statusMessage('Scan ...');
+        t.call('WifiControl', 'scan').then( {
+        }).then( () => {
+            statusMessage('Got scan reponse');
+        })
+    }
+
+    function processNetworks(networks)
+    {
+        networks.sort(function(a, b) {
+            if (a.ssid < b.ssid) {return -1;}
+            if (a.ssid > b.ssid) {return 1;}
+            return 0;
+            }
+        );
+        var list = document.getElementById('networks');
+
+        while ( list.length ) {         // clear the list
+            list.remove(0);
+        }
+
+        var count = 0;
+        for (var i=0; i < networks.length; i++) {
+            if (networks[i].ssid.length) {
+                var option = document.createElement('option');
+                option.text  = networks[i].ssid;
+                option.value = networks[i].ssid;
+                //option.value = networks[i].bssid;
+                list.appendChild(option);
+
+                index = defaultWifi.indexOf(networks[i].ssid);
+                if ( index > -1) {
+                    statusMessage("Selecting " + defaultWifi[index] + " @ " + count);
+                    list.selectedIndex = count;
+                }
+                ++count;
+            }
+        }
+
+    }
+
+    function networks() {
+        statusMessage('Getting networks');
+        t.call('WifiControl', 'networks').then(data => {
+            statusMessage('Got ' + data.length + ' networks');
+            processNetworks(data);
+            lastNetworkResponse = Date.now();
+        })
+    }
+
+    function saveConfig() {
+        statusMessage('Saving config');
+        t.call('WifiControl', `config@${ssid}`, {
+            ssid : ssid,
+            accesspoint : false,
+            psk : psk,
+            type : type
+        }).then( () => {
+            statusMessage('Config Saved.');
+        })
+    }
+
+    function connect() {
+        saveConfig();
+
+        statusMessage('Connecting');
+        t.call('WifiControl', 'connect', {
+            ssid: ssid
+        }).then( () => {
+            statusMessage('Got connect reponse');
+        }).catch(e => {
+            console.log("Connection exception=" + e);
+        });
+    }
+
+    function disconnect() {
+        statusMessage('Disconnecting');
+        t.call('WifiControl', 'disconnect', {
+            ssid: ssid
+        }).then( () => {
+            statusMessage('Disconnected');
+        }).catch(e => {
+            console.log("Disconnect exception=" + e);
+        });
+    }
+
+    function statusMessage(message, arg1) {
+        console.log(message, arg1 ? arg1 : '')
+        window.clearTimeout(this.statusMessageTimer);
+        document.getElementById('message').innerHTML += message + (arg1 !== undefined ? JSON.stringify(arg1) : '') + '<br>';
+    }
+
+    function renderCount() {
+        document.getElementById('succesfull').innerHTML = `Successfull connects: ${successCount}`;
+        document.getElementById('failed').innerHTML = `Failed connects: ${failedCount}`;
+    }
+
+</script>
+
+<body style="background-color: black" onload="init()">
+    <div style="background-color: black">
+        <button class="button" type="button" onclick="scan()"> Scan </button>
+        <button class="button" type="button" onclick="networks()"> Networks </button>
+
+        <select id="networks" style="width: fit-content;"></select>
+
+        Password: <input type="text" name="" id="password" value="aaa00000" size=12 />
+        <button class="button" type="button" onclick="saveConfig()"> Save </button>
+
+        <button class="button" type="button" onclick="connect()"> Connect </button>
+        <button class="button" type="button" onclick="disconnect()"> Disconnect </button>
+
+        </div>
+
+    <div style="position: absolute; left: 50px; top: 100px; color: green;">
+        <div id="succesfull">Successfull connects: -</div>
+        <div id="failed">Failed connects: -</div>
+        <div id="message"></div>
+    </div>
+</body>
+</html>
