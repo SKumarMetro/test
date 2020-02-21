@@ -10,13 +10,12 @@
 #define PRINTF_L2 //printf
 #define PRINTF_L3 //printf
 
-#define DEFAULT_SOCK_PATH "/var/run/wpa_supplicant/wlan0";
-
 #define WPA_EVENT_BSS_ADDED     "CTRL-EVENT-BSS-ADDED"
 #define WPA_EVENT_BSS_REMOVED   "CTRL-EVENT-BSS-REMOVED"
 #define WPA_EVENT_SCAN_STARTED  "CTRL-EVENT-SCAN-STARTED"
 #define WPA_EVENT_SCAN_RESULTS  "CTRL-EVENT-SCAN-RESULTS"
 #define WPA_EVENT_SCAN_FAILED   "CTRL-EVENT-SCAN-FAILED"
+//"CTRL-EVENT-TERMINATING"
 
 int scanInterval = 30;
 
@@ -28,45 +27,22 @@ static double now()
     return ( static_cast<double>(usec)/1000000L );
 }
 
-
-uint16_t SureshCli::ControlSocket::SendData(uint8_t* dataFrame, const uint16_t maxSendSize)
+SureshCli::SureshCli()
+    : SimpleSocket(WIFI_SENDBUF_SIZE, WIFI_RECVBUF_SIZE)
+    , _CtrlSocket(*this)
 {
-    uint16_t result = 0;
-    string msg;
-    if (!_requests.empty()) {
-        msg = _requests.front();
-        _requests.pop();
-        result = msg.length();
-        memcpy(dataFrame, msg.c_str(), result);
-    }
-    return result;
 }
 
-uint16_t SureshCli::ControlSocket::ReceiveData(uint8_t* dataFrame, const uint16_t receivedSize)
+SureshCli::~SureshCli()
 {
-    PRINTF_L2(  "%s: Received %d bytes\n", __PRETTY_FUNCTION__, receivedSize);
-    string message = string(reinterpret_cast<const char*>(dataFrame), (dataFrame[receivedSize - 1] == '\n' ? receivedSize - 1 : receivedSize));
-    _parent.processControlMessage(message);
 }
 
-void SureshCli::ControlSocket::StateChange()
+void SureshCli::StateChange()
 {
     PRINTF_L1(  "%s: \n", __PRETTY_FUNCTION__);
-    if (!_attached) {
-        _attached = true;
-        Send("ATTACH");
+    if (IsOpen()) {
+        Send("SET bss_max_count 1024");
     }
-}
-
-int SureshCli::ControlSocket::Send(const string& msg) {
-    _requests.push(msg);
-    Trigger();
-    return 0;
-}
-
-Networks& SureshCli::getNetworks()
-{
-    return _networks;
 }
 
 uint16_t SureshCli::SendData(uint8_t* dataFrame, const uint16_t maxSendSize)
@@ -98,16 +74,6 @@ uint16_t SureshCli::ReceiveData(uint8_t* dataFrame, const uint16_t receivedSize)
     }
 }
 
-void SureshCli::StateChange()
-{
-    PRINTF_L1(  "%s: \n", __PRETTY_FUNCTION__);
-    if (IsOpen()) {
-        Send("SET bss_max_count 1024");
-    }
-}
-
-
-
 int SureshCli::Send(const string& msg, bool bControl)
 {
     int rc = 0;
@@ -126,15 +92,11 @@ int SureshCli::Send(const string& msg, bool bControl)
     return rc;
 }
 
-SureshCli::SureshCli(const char* socket_path)
-    : SimpleSocket(socket_path)
-    , _CtrlSocket(*this, socket_path)
+Networks& SureshCli::getNetworks()
 {
+    return _networks;
 }
 
-SureshCli::~SureshCli()
-{
-}
 
 void SureshCli::parseContrlMsg(const string &msg, string &cmd, string &bss)
 {
@@ -220,6 +182,49 @@ void SureshCli::processControlMessage( const string& msg )
     }
 }
 
+
+SureshCli::ControlSocket::ControlSocket(SureshCli& parent)
+    : _parent(parent)
+    , SimpleSocket(WIFI_SENDBUF_SIZE, WIFI_RECVBUF_SIZE)
+{
+}
+
+uint16_t SureshCli::ControlSocket::SendData(uint8_t* dataFrame, const uint16_t maxSendSize)
+{
+    uint16_t result = 0;
+    string msg;
+    if (!_requests.empty()) {
+        msg = _requests.front();
+        _requests.pop();
+        result = msg.length();
+        memcpy(dataFrame, msg.c_str(), result);
+    }
+    return result;
+}
+
+uint16_t SureshCli::ControlSocket::ReceiveData(uint8_t* dataFrame, const uint16_t receivedSize)
+{
+    PRINTF_L2(  "%s: Received %d bytes\n", __PRETTY_FUNCTION__, receivedSize);
+    string message = string(reinterpret_cast<const char*>(dataFrame), (dataFrame[receivedSize - 1] == '\n' ? receivedSize - 1 : receivedSize));
+    _parent.processControlMessage(message);
+}
+
+void SureshCli::ControlSocket::StateChange()
+{
+    PRINTF_L1(  "%s: \n", __PRETTY_FUNCTION__);
+    if (!_attached) {
+        _attached = true;
+        Send("ATTACH");
+    }
+}
+
+int SureshCli::ControlSocket::Send(const string& msg) {
+    _requests.push(msg);
+    Trigger();
+    return 0;
+}
+
+
 int main(int argc, char *argv[])
 {
     const char *socket_path = DEFAULT_SOCK_PATH;
@@ -230,7 +235,7 @@ int main(int argc, char *argv[])
 
     PRINTF_L1("socket_path=%s scanInterval=%d\n", socket_path, scanInterval);
 
-    SureshCli sureshCli(socket_path);
+    SureshCli sureshCli;
 
     while ( true ) {
         string cmd;

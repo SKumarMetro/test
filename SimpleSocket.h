@@ -19,15 +19,16 @@
 
 class SimpleSocket {
     public:
-        SimpleSocket(const char *socket_path);
+        SimpleSocket(const uint16_t nSendBufferSize, const uint16_t nReceiveBufferSize);
         ~SimpleSocket();
-        int Open();
-        int Close();
+        int Open(const uint32_t waitTime = 0);
+        int Close(const uint32_t waitTime = 0);
         int Reopen();
         int Bind();
         int Connect();
         int SetNonBlocking();
         bool IsOpen();
+        bool IsClosed() { return !IsOpen(); }
 
     protected:
         int Send(char *msg, int msg_len);
@@ -40,6 +41,8 @@ class SimpleSocket {
         void Trigger();
 
     private:
+        uint16_t m_ReceiveBufferSize;
+        uint16_t m_SendBufferSize;
         std::thread _thread;
         bool _running;
         int fd;

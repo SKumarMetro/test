@@ -4,8 +4,7 @@
 #define PRINTF_L2 //printf
 #define PRINTF_L3 //printf
 
-#define RECV_BUFFER_SIZE 4096
-#define SEND_BUFFER_SIZE 256
+#define SOCKET_PATH "/var/run/wpa_supplicant/wlan0"
 
 static double now()
 {
@@ -15,30 +14,33 @@ static double now()
     return ( static_cast<double>(usec)/1000000L );
 }
 
-
-SimpleSocket::SimpleSocket(const char *socket_path)
-    : _thread (&SimpleSocket::Worker, this )
-    , _socket_path(socket_path)
+SimpleSocket::SimpleSocket(const uint16_t nSendBufferSize, const uint16_t nReceiveBufferSize)
+    : m_ReceiveBufferSize(nReceiveBufferSize)
+    , m_SendBufferSize(nSendBufferSize)
+    , _thread (&SimpleSocket::Worker, this )
+    , _socket_path(SOCKET_PATH)
     , _sendPending(false)
 {
+    PRINTF_L1("%s: Inside\n", __FUNCTION__);
 }
 
 SimpleSocket::~SimpleSocket()
 {
+    PRINTF_L1("%s: Inside\n", __FUNCTION__);
 }
 
 void SimpleSocket::Worker()
 {
     int rc = 0;
-    PRINTF_L2(  "%s: Entering\n", __FUNCTION__);
-    char data[RECV_BUFFER_SIZE];
+    PRINTF_L2("%s: Entering\n", __FUNCTION__);
+    char data[m_ReceiveBufferSize];
     Open();
 
-    PRINTF_L2(  "%s: Initializing\n", __FUNCTION__);
+    PRINTF_L2("%s: Initializing\n", __FUNCTION__);
     SetNonBlocking();
     if (Bind() == 0) {
         if (Connect() != 0) {
-            printf(  "%s: Connect Failed\n", __FUNCTION__);
+            printf("%s: Connect Failed\n", __FUNCTION__);
             rc = -1;
         }
     } else {
@@ -51,56 +53,46 @@ void SimpleSocket::Worker()
         int nbytes = Receive(data, sizeof(data) );
         //printf(  "%s: Received %d bytes\n", __FUNCTION__, nbytes);
         if (nbytes > 0) {
-            //string msg = string(reinterpret_cast<const char*>(data), (data[nbytes - 1] == '\n' ? nbytes - 1 : nbytes));
-            //_responses.push(msg);
             ReceiveData((uint8_t *)data, nbytes);
         } else if (_sendPending) {
-            char msg[SEND_BUFFER_SIZE];
-            int nbytes = SendData((uint8_t*)msg, SEND_BUFFER_SIZE);
+            char msg[m_SendBufferSize];
+            int nbytes = SendData((uint8_t*)msg, m_SendBufferSize);
             if (nbytes) {
                 Send(msg, nbytes);
             }
             _sendPending = false;
         }
     }
-    Close();
 
-    PRINTF_L2(  "%s: Exiting\n", __FUNCTION__);
+    PRINTF_L2("%s: Exiting\n", __FUNCTION__);
 }
 
-int SimpleSocket::Close()
-{
-    PRINTF_L2("Shutting down %d\n", fd);
-    shutdown(fd, SHUT_RDWR);
-    close(fd);
-}
-
-int SimpleSocket::Open()
+int SimpleSocket::Open(const uint32_t waitTime)
 {
     int rc = 0;
     static int counter = 0;
 
     if ( (fd = socket(AF_UNIX, SOCK_DGRAM, 0)) == -1) {
-        perror("socket error");
+        PRINTF_L1("socket error errno=%d\n", errno);
         exit(-1);
     }
 
     int rb = 0, sb = 0;
     socklen_t sz = sizeof(int);
 
-    rb = RECV_BUFFER_SIZE;
+    rb = m_ReceiveBufferSize;
     rc = setsockopt(fd, SOL_SOCKET, SO_RCVBUF, (void *)&rb, sz);
     if (rc)
-        printf("%s: Failed to SO_RCVBUF=%d errno=%d\n", __FUNCTION__, fd, rb, errno);
-    sb = SEND_BUFFER_SIZE;
+        PRINTF_L1("%s: Socket=%d Failed to set SO_RCVBUF=%d  errno=%d\n", __FUNCTION__, fd, rb, errno);
+    sb = m_SendBufferSize;
     rc = setsockopt(fd, SOL_SOCKET, SO_SNDBUF, (void *)&sb, sz);
     if (rc)
-        printf("%s: Failed to SO_SNDBUF=%d errno=%d\n", __FUNCTION__, fd, sb, errno);
+        PRINTF_L1("%s: socket=%d Failed to set SO_SNDBUF=%d errno=%d\n", __FUNCTION__, fd, sb, errno);
 
     getsockopt(fd, SOL_SOCKET, SO_RCVBUF, (void *)&rb, &sz);
     getsockopt(fd, SOL_SOCKET, SO_SNDBUF, (void *)&sb, &sz);
 
-   printf(  "%s: Created socket %d SO_RCVBUF=%d SO_SNDBUF=%d\n", __FUNCTION__, fd, rb, sb);
+    PRINTF_L1("%s: Created socket %d SO_RCVBUF=%d SO_SNDBUF=%d\n", __FUNCTION__, fd, rb, sb);
 
     memset(&remote, 0, sizeof(remote));
     remote.sun_family = AF_UNIX;
@@ -113,6 +105,17 @@ int SimpleSocket::Open()
     return rc;
 }
 
+int SimpleSocket::Close(const uint32_t waitTime)
+{
+    _running = false;
+    _thread.join();
+    PRINTF_L1("Shutting down %d\n", fd);
+    shutdown(fd, SHUT_RDWR);
+    close(fd);
+
+    return 0;
+}
+
 bool SimpleSocket::IsOpen()
 {
     bool result = true;
@@ -121,7 +124,7 @@ bool SimpleSocket::IsOpen()
     getsockopt(fd, SOL_SOCKET, SO_ERROR, &val, &sz);
     if (val) {
         result = false;
-        printf(  "%s: SO_ERROR code %d errno=%d\n", __FUNCTION__, val, errno);
+        PRINTF_L2("%s: SO_ERROR code %d errno=%d\n", __FUNCTION__, val, errno);
     }
 
     return result;
@@ -130,17 +133,17 @@ bool SimpleSocket::IsOpen()
 int SimpleSocket::Reopen()
 {
     Close();
-    Open();
+    return (Open());
 }
 
 int SimpleSocket::Bind()
 {
     int rc = 0;
-    printf("binding local to %s\n", local.sun_path);
+    PRINTF_L1("binding local to %s\n", local.sun_path);
     if (bind(fd, (struct sockaddr *) &local, sizeof(local)) < 0) {
-        printf("bind error!!! errno=%d\n", errno);
+        PRINTF_L1("bind error!!! errno=%d\n", errno);
         if (errno == EADDRINUSE) {
-            printf("local address (%s) is in use\n", local.sun_path);
+            PRINTF_L1("local address (%s) is in use\n", local.sun_path);
         }
         rc = -1;
     }
@@ -153,10 +156,10 @@ int SimpleSocket::SetNonBlocking()
     int rc = 0;
 
     if (fcntl(fd, F_SETFL, O_NONBLOCK) == -1) {
-        printf(  "%s: fcntl(O_NONBLOCK) FAILED. errno=%d\n", __FUNCTION__, errno);
+        PRINTF_L1("%s: fcntl(O_NONBLOCK) FAILED. errno=%d\n", __FUNCTION__, errno);
         rc = -1;
     } else {
-        printf(  "%s: Using NON-BLOCKING socket\n", __FUNCTION__);
+        PRINTF_L1("%s: Using NON-BLOCKING socket\n", __FUNCTION__);
     }
 
     return rc;
@@ -164,14 +167,21 @@ int SimpleSocket::SetNonBlocking()
 
 int SimpleSocket::Connect()
 {
-    int rc = 0;
+    int rc = 0, retry = 0;
+    bool done = false;
 
-    if (connect(fd, (struct sockaddr*)&remote, sizeof(remote)) == -1) {
-        rc = -1;
-        perror("connect error");
-        exit(-1);
-    } else {
-        printf("%d Connected\n", fd);
+    while (!done) {
+        if (connect(fd, (struct sockaddr*)&remote, sizeof(remote)) == -1) {
+            rc = -1;
+            PRINTF_L1 ("%lf: socket %d connect failed errno=%d\n", now(), fd, errno);
+            usleep(100000);
+            if (++retry > 3)
+                done = true;
+        } else {
+            PRINTF_L1("%d Connected\n", fd);
+            rc = 0;
+            done = true;
+        }
     }
 
     return rc;
@@ -228,14 +238,12 @@ int SimpleSocket::Receive(char *reply, int reply_len)
             if (rc > 0) {
             } else if (rc == 0) {   // DGRAM can be 0 byes NOT an error
                 printf ("%s: errno=%d\n", __FUNCTION__, errno );
-                //usleep(5000);
             } else if (rc == -1) {
                 perror("recv error");
             }
         }
     } else if (ret == 0) {
-        //perror("select timedout");
-        usleep(500);
+        usleep(1000);
     } else if (ret == -1) {
         perror("select error");
     }

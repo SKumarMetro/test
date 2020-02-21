@@ -5,6 +5,10 @@
 
 #include "SimpleSocket.h"
 
+#define DEFAULT_SOCK_PATH "/var/run/wpa_supplicant/wlan0";
+#define WIFI_SENDBUF_SIZE 512
+#define WIFI_RECVBUF_SIZE 32767
+
 using namespace std;
 
 struct Network {
@@ -41,14 +45,10 @@ class SureshCli : public SimpleSocket
         class ControlSocket : public SimpleSocket
         {
             public:
-                ControlSocket(SureshCli& parent, const char *socket_path)
-                    : _parent(parent)
-                    , SimpleSocket(socket_path)
-                {
-                }
-                uint16_t SendData(uint8_t* dataFrame, const uint16_t maxSendSize);
-                uint16_t ReceiveData(uint8_t* dataFrame, const uint16_t receivedSize);
-                void StateChange();
+                ControlSocket(SureshCli& parent);
+                /* virtual */ void StateChange();
+                /* virtual */ uint16_t SendData(uint8_t* dataFrame, const uint16_t maxSendSize);
+                /* virtual */ uint16_t ReceiveData(uint8_t* dataFrame, const uint16_t receivedSize);
                 int Send(const string& msg);
 
             private:
@@ -57,19 +57,21 @@ class SureshCli : public SimpleSocket
                 bool _attached = false;
         };
 
-        SureshCli(const char* socket_path);
+        SureshCli();
         ~SureshCli();
+
+        /* virtual */ void StateChange();
+        /* virtual */ uint16_t SendData(uint8_t* dataFrame, const uint16_t maxSendSize);
+        /* virtual */ uint16_t ReceiveData(uint8_t* dataFrame, const uint16_t receivedSize);
+
         int Send(const string& msg, bool bControl = false);
         Networks& getNetworks();
-        uint16_t SendData(uint8_t* dataFrame, const uint16_t maxSendSize);
-        uint16_t ReceiveData(uint8_t* dataFrame, const uint16_t receivedSize);
-        void StateChange();
-        void processControlMessage( const string& msg );
 
     private:
         void processResponse( const string& response);
         void parseContrlMsg(const string &msg, string &cmd, string &bss);
         void processDetailResponse(const string &response, Network& network);
+        void processControlMessage( const string& msg );
 
     private:
         ControlSocket _CtrlSocket;
