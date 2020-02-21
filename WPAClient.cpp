@@ -1,6 +1,7 @@
 #include "WPAClient.h"
 
 int scanInterval = 30;
+int delay = 0;
 
 namespace WPEFramework {
 namespace WPASupplicant {
@@ -15,7 +16,7 @@ double now()
 
 WPAClient::WPAClient()
 #if USE_SINGLE_SOCK
-    //: _socket(_CtrlSocket)        // Single sock for both ctrl & messages'
+    : _socket(_CtrlSocket)        // Single sock for both ctrl & messages'
 #else
     : _socket()
     , _CtrlSocket()
@@ -69,7 +70,11 @@ void WPAClient::Dispose()
 
 
 WPAClient::Socket::Socket()
+    #ifdef USE_SIMPLESOCKET
+    : BaseClass("/var/run/wpa_supplicant/wlan0")
+    #else
     : BaseClass(false, Core::NodeId(), Core::NodeId(), 4096, 4096)
+    #endif
     , supplicantBase(_T("/var/run/wpa_supplicant"))
     , interfaceName(_T("wlan0"))
     , attached(false)
@@ -81,9 +86,11 @@ WPAClient::Socket::Socket()
     if (Core::File(remoteName).Exists() == true) {
         string data(Core::Directory::Normalize(supplicantBase) + _T("wpa_ctrl_") + interfaceName + '-' + Core::NumberType<uint32_t>(::getpid()).Text()
             + "-" + Core::NumberType<uint32_t>(count++).Text() );
+        #ifndef USE_SIMPLESOCKET
         LocalNode(Core::NodeId(data.c_str()));
         RemoteNode(Core::NodeId(remoteName.c_str()));
         _error = BaseClass::Open(MaxConnectionTime);
+        #endif
         printf("open return %d\n", _error);
     }
 }
@@ -125,8 +132,7 @@ uint16_t WPAClient::Socket::ReceiveData(uint8_t* dataFrame, const uint16_t recei
     if (receivedSize) {
         string response = string(reinterpret_cast<const char*>(dataFrame), (dataFrame[receivedSize - 1] == '\n' ? receivedSize - 1 : receivedSize));
         _responses.push(response);
-        //usleep(500000);                 // slow it down
-        sleep(1);
+        usleep(delay * 1000);                 // slow it down
     }
     return receivedSize;
 }
@@ -144,6 +150,8 @@ int main(int argc, char *argv[])
 {
     if (argc > 1)
         scanInterval = atoi (argv[1]);
+    if (argc > 2)
+        delay = atoi (argv[2]);
 
     WPEFramework::WPASupplicant::WPAClient wpaClient;
 

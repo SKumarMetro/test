@@ -1,8 +1,13 @@
 #ifndef WPACLIENT_H
 #define WPACLIENT_H
 
+#define USE_SIMPLESOCKET
+
 //#include "Module.h"
 #include <core/core.h>
+#ifdef USE_SIMPLESOCKET
+#include "SimpleSocket.h"
+#endif
 
 namespace WPEFramework {
 namespace WPASupplicant {
@@ -38,7 +43,11 @@ namespace WPASupplicant {
     {
         private:
             static constexpr uint32_t MaxConnectionTime = 3000;
+            #ifdef USE_SIMPLESOCKET
+            typedef SimpleSocket BaseClass;
+            #else
             typedef Core::StreamType<Core::SocketDatagram> BaseClass;
+            #endif
 
         public:
             class Socket : public BaseClass
