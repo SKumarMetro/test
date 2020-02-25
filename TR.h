@@ -1,4 +1,6 @@
-#include <core/core.h>
+#ifndef TR_H
+#define TR_H
+//#include <core/core.h>
 
 #define TR2() \
 { \
@@ -52,3 +54,10 @@ class TraceExit {
 };
 #define TRACEEXIT() TraceExit te(__FUNCTION__, __LINE__)
 
+#ifndef TRACE_L1
+#define PRINTF_L1 printf
+#define PRINTF_L2 //printf
+#define PRINTF_L3 //printf
+#endif
+
+#endif

@@ -15,7 +15,7 @@
 #include <thread>
 #include <queue>
 
-#include "TR.h"
+#include <core/core.h>
 
 class SimpleSocket {
     public:

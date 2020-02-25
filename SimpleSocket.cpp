@@ -1,9 +1,5 @@
 #include "SimpleSocket.h"
 
-#define PRINTF_L1 printf
-#define PRINTF_L2 //printf
-#define PRINTF_L3 //printf
-
 #define SOCKET_PATH "/var/run/wpa_supplicant/wlan0"
 
 static double now()
@@ -21,22 +17,22 @@ SimpleSocket::SimpleSocket(const uint16_t nSendBufferSize, const uint16_t nRecei
     , _socket_path(SOCKET_PATH)
     , _sendPending(false)
 {
-    PRINTF_L1("%s: Inside\n", __FUNCTION__);
+    TRACE_L1("%s: Inside\n", __FUNCTION__);
 }
 
 SimpleSocket::~SimpleSocket()
 {
-    PRINTF_L1("%s: Inside\n", __FUNCTION__);
+    TRACE_L1("%s: Inside\n", __FUNCTION__);
 }
 
 void SimpleSocket::Worker()
 {
     int rc = 0;
-    PRINTF_L2("%s: Entering\n", __FUNCTION__);
+    TRACE_L2("%s: Entering\n", __FUNCTION__);
     char data[m_ReceiveBufferSize];
     Open();
 
-    PRINTF_L2("%s: Initializing\n", __FUNCTION__);
+    TRACE_L2("%s: Initializing\n", __FUNCTION__);
     SetNonBlocking();
     if (Bind() == 0) {
         if (Connect() != 0) {
@@ -64,7 +60,7 @@ void SimpleSocket::Worker()
         }
     }
 
-    PRINTF_L2("%s: Exiting\n", __FUNCTION__);
+    TRACE_L2("%s: Exiting\n", __FUNCTION__);
 }
 
 int SimpleSocket::Open(const uint32_t waitTime)
@@ -73,7 +69,7 @@ int SimpleSocket::Open(const uint32_t waitTime)
     static int counter = 0;
 
     if ( (fd = socket(AF_UNIX, SOCK_DGRAM, 0)) == -1) {
-        PRINTF_L1("socket error errno=%d\n", errno);
+        TRACE_L1("socket error errno=%d\n", errno);
         exit(-1);
     }
 
@@ -83,16 +79,16 @@ int SimpleSocket::Open(const uint32_t waitTime)
     rb = m_ReceiveBufferSize;
     rc = setsockopt(fd, SOL_SOCKET, SO_RCVBUF, (void *)&rb, sz);
     if (rc)
-        PRINTF_L1("%s: Socket=%d Failed to set SO_RCVBUF=%d  errno=%d\n", __FUNCTION__, fd, rb, errno);
+        TRACE_L1("%s: Socket=%d Failed to set SO_RCVBUF=%d  errno=%d\n", __FUNCTION__, fd, rb, errno);
     sb = m_SendBufferSize;
     rc = setsockopt(fd, SOL_SOCKET, SO_SNDBUF, (void *)&sb, sz);
     if (rc)
-        PRINTF_L1("%s: socket=%d Failed to set SO_SNDBUF=%d errno=%d\n", __FUNCTION__, fd, sb, errno);
+        TRACE_L1("%s: socket=%d Failed to set SO_SNDBUF=%d errno=%d\n", __FUNCTION__, fd, sb, errno);
 
     getsockopt(fd, SOL_SOCKET, SO_RCVBUF, (void *)&rb, &sz);
     getsockopt(fd, SOL_SOCKET, SO_SNDBUF, (void *)&sb, &sz);
 
-    PRINTF_L1("%s: Created socket %d SO_RCVBUF=%d SO_SNDBUF=%d\n", __FUNCTION__, fd, rb, sb);
+    TRACE_L1("%s: Created socket %d SO_RCVBUF=%d SO_SNDBUF=%d\n", __FUNCTION__, fd, rb, sb);
 
     memset(&remote, 0, sizeof(remote));
     remote.sun_family = AF_UNIX;
@@ -109,7 +105,7 @@ int SimpleSocket::Close(const uint32_t waitTime)
 {
     _running = false;
     _thread.join();
-    PRINTF_L1("Shutting down %d\n", fd);
+    TRACE_L1("Shutting down %d\n", fd);
     shutdown(fd, SHUT_RDWR);
     close(fd);
 
@@ -124,7 +120,7 @@ bool SimpleSocket::IsOpen()
     getsockopt(fd, SOL_SOCKET, SO_ERROR, &val, &sz);
     if (val) {
         result = false;
-        PRINTF_L2("%s: SO_ERROR code %d errno=%d\n", __FUNCTION__, val, errno);
+        TRACE_L2("%s: SO_ERROR code %d errno=%d\n", __FUNCTION__, val, errno);
     }
 
     return result;
@@ -139,11 +135,11 @@ int SimpleSocket::Reopen()
 int SimpleSocket::Bind()
 {
     int rc = 0;
-    PRINTF_L1("binding local to %s\n", local.sun_path);
+    TRACE_L1("binding local to %s\n", local.sun_path);
     if (bind(fd, (struct sockaddr *) &local, sizeof(local)) < 0) {
-        PRINTF_L1("bind error!!! errno=%d\n", errno);
+        TRACE_L1("bind error!!! errno=%d\n", errno);
         if (errno == EADDRINUSE) {
-            PRINTF_L1("local address (%s) is in use\n", local.sun_path);
+            TRACE_L1("local address (%s) is in use\n", local.sun_path);
         }
         rc = -1;
     }
@@ -156,10 +152,10 @@ int SimpleSocket::SetNonBlocking()
     int rc = 0;
 
     if (fcntl(fd, F_SETFL, O_NONBLOCK) == -1) {
-        PRINTF_L1("%s: fcntl(O_NONBLOCK) FAILED. errno=%d\n", __FUNCTION__, errno);
+        TRACE_L1("%s: fcntl(O_NONBLOCK) FAILED. errno=%d\n", __FUNCTION__, errno);
         rc = -1;
     } else {
-        PRINTF_L1("%s: Using NON-BLOCKING socket\n", __FUNCTION__);
+        TRACE_L1("%s: Using NON-BLOCKING socket\n", __FUNCTION__);
     }
 
     return rc;
@@ -173,12 +169,12 @@ int SimpleSocket::Connect()
     while (!done) {
         if (connect(fd, (struct sockaddr*)&remote, sizeof(remote)) == -1) {
             rc = -1;
-            PRINTF_L1 ("%lf: socket %d connect failed errno=%d\n", now(), fd, errno);
+            TRACE_L1 ("%lf: socket %d connect failed errno=%d\n", now(), fd, errno);
             usleep(100000);
             if (++retry > 3)
                 done = true;
         } else {
-            PRINTF_L1("%d Connected\n", fd);
+            TRACE_L1("%d Connected\n", fd);
             rc = 0;
             done = true;
         }
@@ -190,7 +186,7 @@ int SimpleSocket::Connect()
 int SimpleSocket::Send(char *msg, int len)
 {
     int rc = 0;
-    PRINTF_L2 ("%lf: Sending '%s'\n", now(), msg);
+    TRACE_L2 ("%lf: Sending '%.*s'\n", now(), len, msg);
     if (write(fd, msg, len) != len) {
         perror("write error");
         rc = -1;
@@ -200,8 +196,8 @@ int SimpleSocket::Send(char *msg, int len)
         if (ioctl(fd, TIOCOUTQ, &outq) < 0)
             outq = -1;
 
-        PRINTF_L1 ("%lf: socket=%d Send '%s' errno=%d TIOCOUTQ=%d\n", now(), fd, msg, errno, outq);
-        //PRINTF_L1 ("%lf: socket=%d Failed to send '%s' errno=%d TIOCOUTQ=%d\n", now(), fd, msg, errno, outq);
+        TRACE_L1 ("%lf: socket=%d Send '%s' errno=%d TIOCOUTQ=%d\n", now(), fd, msg, errno, outq);
+        //TRACE_L1 ("%lf: socket=%d Failed to send '%s' errno=%d TIOCOUTQ=%d\n", now(), fd, msg, errno, outq);
     #endif
     return rc;
 }
@@ -219,11 +215,11 @@ int SimpleSocket::Receive(char *reply, int reply_len)
     tv.tv_usec = 100;
 
     int ret = select(fd + 1, &rfds, NULL, NULL, &tv);
-    PRINTF_L3("select return %d\n", ret);
+    TRACE_L3("select return %d\n", ret);
     if (ret > 0) {
         if (FD_ISSET(fd, &rfds)) {
             rc = recv(fd, reply, reply_len, 0);
-            PRINTF_L3("recv return %d\n", rc);
+            TRACE_L3("recv return %d\n", rc);
 
             int rcvbuf = 0;
             socklen_t optlen = sizeof(rcvbuf);
@@ -233,7 +229,7 @@ int SimpleSocket::Receive(char *reply, int reply_len)
             int inq2 = 0;
             if (ioctl(fd, TIOCINQ, &inq2) < 0)
                 inq2 = -1;
-            PRINTF_L2("%s: socket=%d inq1=%d inq2=%d rcvbuf=%d\n", __FUNCTION__, fd, 0, inq2, rcvbuf);
+            TRACE_L2("%s: socket=%d inq1=%d inq2=%d rcvbuf=%d\n", __FUNCTION__, fd, 0, inq2, rcvbuf);
 
             if (rc > 0) {
             } else if (rc == 0) {   // DGRAM can be 0 byes NOT an error
